@@ -12,12 +12,6 @@ qt_add_executable(StockClient
     stockclient.h
     stockclient.ui
     mainwindow.h
-    mainwindow.h
-    mainwindow.h
-    mainwindow.h
-    mainwindow.h
-    mainwindow.h
-    mainwindow.h
     stockclient.cpp
     mainwindow.cpp
 )
