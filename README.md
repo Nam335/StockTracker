@@ -5,7 +5,7 @@
 ## Thành phần
 
 - `Code/Client/StockClient`: ứng dụng Client.
-- `Code/Sever/StockServer`: ứng dụng Server.
+- `Code/Server/StockServer`: ứng dụng Server.
 
 ## Công nghệ
 
