@@ -1,4 +1,3 @@
-
 #include "stockclient.h"
 
 #include <QJsonDocument>
@@ -7,10 +6,27 @@
 #include <QAbstractSocket>
 #include <QDebug>
 
+// Thoi gian cho truoc moi lan thu ket noi lai (ms).
+static const int kReconnectIntervalMs = 3000;
+
 StockClient::StockClient(QObject *parent)
     : QObject(parent),
-    socket(new QTcpSocket(this))
+    socket(new QTcpSocket(this)),
+    reconnectTimer(new QTimer(this))
 {
+    reconnectTimer->setSingleShot(true);
+    reconnectTimer->setInterval(kReconnectIntervalMs);
+
+    connect(reconnectTimer, &QTimer::timeout, this, [this]() {
+        if (!autoReconnect
+            || socket->state() != QAbstractSocket::UnconnectedState) {
+            return;
+        }
+
+        emit statusChanged("Dang ket noi lai den StockServer...");
+        socket->connectToHost(serverHost, serverPort);
+    });
+
     connect(socket, &QTcpSocket::connected, this, [this]() {
         buffer.clear();
         emit statusChanged("Da ket noi den StockServer.");
@@ -19,6 +35,7 @@ StockClient::StockClient(QObject *parent)
     connect(socket, &QTcpSocket::disconnected, this, [this]() {
         buffer.clear();
         emit statusChanged("Da ngat ket noi.");
+        scheduleReconnect();
     });
 
     connect(socket, &QTcpSocket::readyRead,
@@ -28,6 +45,8 @@ StockClient::StockClient(QObject *parent)
             this, [this](QAbstractSocket::SocketError) {
                 emit statusChanged(
                     "Loi TCP: " + socket->errorString());
+                // Ket noi that bai (vd Server chua bat) cung thu lai.
+                scheduleReconnect();
             });
 }
 
@@ -40,13 +59,48 @@ void StockClient::connectToServer(
 
     buffer.clear();
 
+    serverHost = host;
+    serverPort = port;
+    autoReconnect = true;
+    reconnectTimer->stop();
+
     emit statusChanged("Dang ket noi den StockServer...");
     socket->connectToHost(host, port);
 }
 
 void StockClient::disconnectFromServer()
 {
-    socket->disconnectFromHost();
+    // Nguoi dung chu dong ngat: khong tu ket noi lai nua.
+    autoReconnect = false;
+    reconnectTimer->stop();
+
+    if (socket->state() == QAbstractSocket::ConnectedState) {
+        socket->disconnectFromHost();
+        return;
+    }
+
+    // Dang ket noi do hoac dang cho thu lai: khong co ket noi that
+    // nen khong co tin hieu disconnected, tu bao trang thai.
+    socket->abort();
+    emit statusChanged("Da ngat ket noi.");
+}
+
+// Hen gio thu ket noi lai neu nguoi dung chua bam Ngat ket noi.
+// Goi nhieu lan van chi co mot lan hen gio.
+void StockClient::scheduleReconnect()
+{
+    if (!autoReconnect) {
+        return;
+    }
+
+    emit statusChanged(
+        "Mat ket noi. Tu dong ket noi lai sau "
+        + QString::number(kReconnectIntervalMs / 1000)
+        + " giay...");
+
+    if (!reconnectTimer->isActive()) {
+        reconnectTimer->start();
+    }
 }
 
 void StockClient::readData()

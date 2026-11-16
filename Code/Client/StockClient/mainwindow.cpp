@@ -73,11 +73,12 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](const QString &status) {
                 statusLabel->setText(status);
 
-                bool connected =
-                    status.startsWith("Da ket noi den StockServer.");
+                // Khi dang ket noi / cho thu lai van cho bam Ngat ket noi
+                // de huy viec tu ket noi lai.
+                const bool active = client.isActive();
 
-                connectButton->setEnabled(!connected);
-                disconnectButton->setEnabled(connected);
+                connectButton->setEnabled(!active);
+                disconnectButton->setEnabled(active);
             });
 
     connect(&client, &StockClient::priceReceived,
