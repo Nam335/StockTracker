@@ -1,6 +1,8 @@
 #include "mainwindow.h"
 #include <QLabel>
 #include <QPushButton>
+#include <QLineEdit>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QVBoxLayout>
@@ -17,7 +19,9 @@ MainWindow::MainWindow(QWidget *parent)
     statusLabel(new QLabel("Chua ket noi")),
     connectButton(new QPushButton("Ket noi")),
     disconnectButton(new QPushButton("Ngat ket noi")),
-    priceTable(new QTableWidget(5, 4))
+    priceTable(new QTableWidget(5, 4)),
+    hostEdit(new QLineEdit("127.0.0.1")),
+    portSpin(new QSpinBox())
 {
     setWindowTitle("Stock Tracker - Client");
     resize(700, 400);
@@ -26,11 +30,23 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(central);
+    QHBoxLayout *inputLayout = new QHBoxLayout();
     QHBoxLayout *buttonLayout = new QHBoxLayout();
+
+    // O nhap IP va cong Server (mac dinh 127.0.0.1:5000)
+    hostEdit->setPlaceholderText("vd: 192.168.1.10");
+    portSpin->setRange(1, 65535);
+    portSpin->setValue(5000);
+
+    inputLayout->addWidget(new QLabel("IP Server:"));
+    inputLayout->addWidget(hostEdit, 1);
+    inputLayout->addWidget(new QLabel("Cong:"));
+    inputLayout->addWidget(portSpin);
 
     buttonLayout->addWidget(connectButton);
     buttonLayout->addWidget(disconnectButton);
 
+    mainLayout->addLayout(inputLayout);
     mainLayout->addLayout(buttonLayout);
     mainLayout->addWidget(statusLabel);
     mainLayout->addWidget(priceTable);
@@ -63,8 +79,21 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(connectButton, &QPushButton::clicked,
             this, [this]() {
-                client.connectToServer("127.0.0.1", 5000);
+                const QString host = hostEdit->text().trimmed();
+
+                if (host.isEmpty()) {
+                    statusLabel->setText("Vui long nhap IP Server.");
+                    hostEdit->setFocus();
+                    return;
+                }
+
+                client.connectToServer(
+                    host, static_cast<quint16>(portSpin->value()));
             });
+
+    // Bam Enter trong o IP cung la bam Ket noi.
+    connect(hostEdit, &QLineEdit::returnPressed,
+            connectButton, &QPushButton::click);
 
     connect(disconnectButton, &QPushButton::clicked,
             &client, &StockClient::disconnectFromServer);
@@ -79,6 +108,10 @@ MainWindow::MainWindow(QWidget *parent)
 
                 connectButton->setEnabled(!active);
                 disconnectButton->setEnabled(active);
+
+                // Khong cho doi IP/cong khi dang ket noi.
+                hostEdit->setEnabled(!active);
+                portSpin->setEnabled(!active);
             });
 
     connect(&client, &StockClient::priceReceived,

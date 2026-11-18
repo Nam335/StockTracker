@@ -1,4 +1,3 @@
-
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -6,6 +5,8 @@
 #include "stockclient.h"
 
 class QLabel;
+class QLineEdit;
+class QSpinBox;
 class QPushButton;
 class QTableWidget;
 
@@ -24,6 +25,8 @@ private:
     QPushButton *connectButton;
     QPushButton *disconnectButton;
     QTableWidget *priceTable;
+    QLineEdit *hostEdit;
+    QSpinBox *portSpin;
 
     void updatePrice(const QString &symbol,
                      double price,
