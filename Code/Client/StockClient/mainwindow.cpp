@@ -87,6 +87,10 @@ MainWindow::MainWindow(QWidget *parent)
                     return;
                 }
 
+                // Xoa du lieu cu cua lan ket noi truoc de bang gia
+                // chi hien du lieu moi tu snapshot.
+                resetTable();
+
                 client.connectToServer(
                     host, static_cast<quint16>(portSpin->value()));
             });
@@ -116,9 +120,68 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(&client, &StockClient::priceReceived,
             this, &MainWindow::updatePrice);
+
+    connect(&client, &StockClient::snapshotReceived,
+            this, &MainWindow::applySnapshot);
 }
 
 MainWindow::~MainWindow() = default;
+
+// Doi timestamp ISO (UTC) thanh gio may "HH:mm:ss"; "--" neu rong/sai.
+static QString formatTime(const QString &timestamp)
+{
+    const QDateTime time =
+        QDateTime::fromString(timestamp, Qt::ISODate);
+
+    if (!time.isValid()) {
+        return "--";
+    }
+
+    return time.toLocalTime().toString("HH:mm:ss");
+}
+
+// Dua tat ca o ve trang thai ban dau ("--"), bo gia cu va mau.
+void MainWindow::resetTable()
+{
+    for (int row = 0; row < priceTable->rowCount(); ++row) {
+        for (int col = 1; col < priceTable->columnCount(); ++col) {
+            QTableWidgetItem *item = priceTable->item(row, col);
+            item->setText("--");
+            item->setForeground(QBrush());
+        }
+
+        priceTable->item(row, 1)->setData(Qt::UserRole, QVariant());
+    }
+}
+
+// Snapshot la bang gia ban dau: hien ngay gia + thoi gian cua cac ma.
+// Day chi la moc ban dau, chua co gia truoc do de so sanh nen cot
+// "Thay doi" de "--" va khong to mau; gia nay tro thanh gia goc
+// cho cac PRICE_UPDATE ke tiep.
+void MainWindow::applySnapshot(const QList<StockQuote> &quotes)
+{
+    for (const StockQuote &quote : quotes) {
+        for (int row = 0; row < priceTable->rowCount(); ++row) {
+            if (priceTable->item(row, 0)->text() != quote.symbol) {
+                continue;
+            }
+
+            QTableWidgetItem *priceItem = priceTable->item(row, 1);
+            QTableWidgetItem *changeItem = priceTable->item(row, 2);
+            QTableWidgetItem *timeItem = priceTable->item(row, 3);
+
+            priceItem->setText(QString::number(quote.price, 'f', 2));
+            priceItem->setData(Qt::UserRole, quote.price);
+            priceItem->setForeground(QBrush());
+
+            changeItem->setText("--");
+            changeItem->setForeground(QBrush());
+
+            timeItem->setText(formatTime(quote.timestamp));
+            break;
+        }
+    }
+}
 
 void MainWindow::updatePrice(
     const QString &symbol,

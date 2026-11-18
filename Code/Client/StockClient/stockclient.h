@@ -6,6 +6,16 @@
 #include <QByteArray>
 #include <QString>
 #include <QTimer>
+#include <QJsonObject>
+#include <QList>
+
+// Mot ban ghi gia cua mot ma co phieu.
+struct StockQuote
+{
+    QString symbol;
+    double price = 0.0;
+    QString timestamp;
+};
 
 class StockClient : public QObject
 {
@@ -27,11 +37,21 @@ signals:
                        double price,
                        const QString &timestamp);
 
+    // Bang gia ban dau Server gui ngay khi Client vua ket noi:
+    // {"type":"SNAPSHOT","timestamp":"...","prices":[
+    //     {"symbol":"FPT","price":100.5}, ...]}
+    // Chi gom cac ban ghi hop le (da loai ma rong, gia <= 0).
+    void snapshotReceived(const QList<StockQuote> &quotes);
+
 private slots:
     void readData();
 
 private:
     void scheduleReconnect();
+    static bool parseQuote(const QJsonObject &object,
+                           const QString &defaultTimestamp,
+                           StockQuote &quote);
+    void handleSnapshot(const QJsonObject &object);
 
     QTcpSocket *socket;
     QByteArray buffer;

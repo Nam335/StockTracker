@@ -2,6 +2,8 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonValue>
 #include <QJsonParseError>
 #include <QAbstractSocket>
 #include <QDebug>
@@ -135,33 +137,91 @@ void StockClient::readData()
         }
 
         QJsonObject object = document.object();
+        const QString type = object.value("type").toString();
 
-        if (object.value("type").toString()
-            != "PRICE_UPDATE") {
+        if (type == "SNAPSHOT") {
+            handleSnapshot(object);
             continue;
         }
 
-        QString symbol =
-            object.value("symbol").toString();
+        if (type != "PRICE_UPDATE") {
+            continue;
+        }
 
-        QJsonValue priceValue = object.value("price");
+        StockQuote quote;
 
-        if (symbol.isEmpty() || !priceValue.isDouble()) {
+        if (!parseQuote(object, QString(), quote)) {
             qWarning() << "Du lieu gia co phieu khong hop le:"
                        << line;
             continue;
         }
 
-        double price = priceValue.toDouble();
+        emit priceReceived(quote.symbol, quote.price,
+                           quote.timestamp);
+    }
+}
 
-        if (price <= 0.0) {
-            qWarning() << "Gia co phieu khong hop le:" << price;
+// Doc mot ban ghi gia (dung chung cho PRICE_UPDATE va tung phan
+// tu cua SNAPSHOT). Tra ve false neu thieu ma, gia sai kieu hoac <= 0.
+bool StockClient::parseQuote(const QJsonObject &object,
+                             const QString &defaultTimestamp,
+                             StockQuote &quote)
+{
+    const QString symbol = object.value("symbol").toString();
+    const QJsonValue priceValue = object.value("price");
+
+    if (symbol.isEmpty() || !priceValue.isDouble()) {
+        return false;
+    }
+
+    const double price = priceValue.toDouble();
+
+    if (price <= 0.0) {
+        return false;
+    }
+
+    QString timestamp = object.value("timestamp").toString();
+
+    if (timestamp.isEmpty()) {
+        timestamp = defaultTimestamp;
+    }
+
+    quote.symbol = symbol;
+    quote.price = price;
+    quote.timestamp = timestamp;
+    return true;
+}
+
+void StockClient::handleSnapshot(const QJsonObject &object)
+{
+    const QJsonValue pricesValue = object.value("prices");
+
+    if (!pricesValue.isArray()) {
+        qWarning() << "SNAPSHOT thieu mang \"prices\".";
+        return;
+    }
+
+    // Moi ban ghi co the khong co timestamp rieng: dung timestamp
+    // chung cua SNAPSHOT.
+    const QString snapshotTimestamp =
+        object.value("timestamp").toString();
+
+    QList<StockQuote> quotes;
+
+    const QJsonArray array = pricesValue.toArray();
+
+    for (const QJsonValue &value : array) {
+        StockQuote quote;
+
+        if (!value.isObject()
+            || !parseQuote(value.toObject(),
+                           snapshotTimestamp, quote)) {
+            qWarning() << "Phan tu SNAPSHOT khong hop le, bo qua.";
             continue;
         }
 
-        QString timestamp =
-            object.value("timestamp").toString();
-
-        emit priceReceived(symbol, price, timestamp);
+        quotes.append(quote);
     }
+
+    emit snapshotReceived(quotes);
 }

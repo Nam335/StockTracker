@@ -31,6 +31,8 @@ private:
     void updatePrice(const QString &symbol,
                      double price,
                      const QString &timestamp);
+    void applySnapshot(const QList<StockQuote> &quotes);
+    void resetTable();
 };
 
 #endif // MAINWINDOW_H
