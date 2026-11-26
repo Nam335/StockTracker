@@ -9,6 +9,27 @@
 #include <QJsonObject>
 #include <QList>
 
+struct StockInfo
+{
+    QString symbol;
+    QString name;
+    int displayOrder = 0;
+};
+
+struct HistoryPoint
+{
+    QString timestamp;
+    double price = 0.0;
+};
+
+struct FavoriteInfo
+{
+    QString symbol;
+    QString name;
+    int displayOrder = 0;
+    QString createdAt;
+};
+
 struct StockQuote
 {
     QString symbol;
@@ -43,6 +64,15 @@ public:
     void requestAdminAccounts();
     void setAccountRole(int userId, const QString &role);
 
+    void requestStockList();
+    void requestStockHistory(const QString &symbol, const QString &range);
+    void addStock(const QString &symbol, const QString &name);
+    void removeStock(const QString &symbol);
+    void reorderStocks(const QStringList &symbols);
+
+    void requestFavorites();
+    void addFavorite(const QString &symbol);
+    void removeFavorite(const QString &symbol);
     bool isActive() const { return autoReconnect; }
 
 signals:
@@ -65,6 +95,24 @@ signals:
                              const QList<AccountInfo> &accounts,
                              const QString &message);
 
+    void stockListReceived(bool success,
+                           const QList<StockInfo> &stocks,
+                           const QString &message);
+
+    void stockHistoryReceived(bool success,
+                              const QString &symbol,
+                              const QList<HistoryPoint> &points,
+                              const QString &message);
+
+    void adminStockResult(bool success, const QString &message);
+
+    void favoritesReceived(bool success,
+                           const QList<FavoriteInfo> &favorites,
+                           const QString &message);
+
+    void favoriteActionResult(bool success,
+                              const QString &type,
+                              const QString &message);
     void adminRoleUpdateResult(bool success,
                                const QString &message);
 

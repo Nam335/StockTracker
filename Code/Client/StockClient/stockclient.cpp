@@ -203,6 +203,172 @@ void StockClient::setAccountRole(int userId, const QString &role)
     }
 }
 
+
+// Gui yeu cau lay danh muc co phieu.
+void StockClient::requestStockList()
+{
+    QJsonObject request;
+    request["type"] = "STOCK_LIST_REQUEST";
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit stockListReceived(false, {}, "Chua ket noi Server.");
+        return;
+    }
+
+    socket->write(message);
+}
+
+// Gui yeu cau lay lich su gia.
+void StockClient::requestStockHistory(
+    const QString &symbol, const QString &range)
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit stockHistoryReceived(
+            false, symbol, {}, "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "STOCK_HISTORY_REQUEST";
+    request["symbol"] = symbol;
+    request["range"] = range;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+    socket->write(message);
+}
+
+// Gui yeu cau them co phieu.
+void StockClient::addStock(
+    const QString &symbol, const QString &name)
+{
+    QJsonObject request;
+    request["type"] = "ADMIN_STOCK_REQUEST";
+    request["action"] = "add";
+    request["symbol"] = symbol;
+    request["name"] = name;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit adminStockResult(false, "Chua ket noi Server.");
+        return;
+    }
+
+    socket->write(message);
+}
+
+// Gui yeu cau xoa co phieu.
+void StockClient::removeStock(const QString &symbol)
+{
+    QJsonObject request;
+    request["type"] = "ADMIN_STOCK_REQUEST";
+    request["action"] = "remove";
+    request["symbol"] = symbol;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit adminStockResult(false, "Chua ket noi Server.");
+        return;
+    }
+
+    socket->write(message);
+}
+
+// Gui danh sach ma theo thu tu moi.
+void StockClient::reorderStocks(const QStringList &symbols)
+{
+    QJsonObject request;
+    request["type"] = "ADMIN_STOCK_REQUEST";
+    request["action"] = "reorder";
+
+    QJsonArray array;
+    for (const QString &symbol : symbols)
+        array.append(symbol);
+
+    request["symbols"] = array;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit adminStockResult(false, "Chua ket noi Server.");
+        return;
+    }
+
+    socket->write(message);
+}
+// Gui yeu cau lay danh sach co phieu yeu thich.
+void StockClient::requestFavorites()
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit favoritesReceived(false, {}, "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "FAVORITES_REQUEST";
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    socket->write(message);
+}
+
+// Gui yeu cau ghim co phieu.
+void StockClient::addFavorite(const QString &symbol)
+{
+    const QString type = "FAVORITE_ADD";
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit favoriteActionResult(false, type, "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = type;
+    request["symbol"] = symbol;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    socket->write(message);
+}
+
+// Gui yeu cau bo ghim co phieu.
+void StockClient::removeFavorite(const QString &symbol)
+{
+    const QString type = "FAVORITE_REMOVE";
+
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit favoriteActionResult(false, type, "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = type;
+    request["symbol"] = symbol;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    socket->write(message);
+}
+
 // Chuyen mot doi tuong JSON thanh StockQuote.
 // timestamp mac dinh duoc lay tu SNAPSHOT neu quote khong co timestamp rieng.
 bool StockClient::parseQuote(const QJsonObject &object,
@@ -357,6 +523,105 @@ void StockClient::readData()
         if (type == "ADMIN_ROLE_RESPONSE") {
             emit adminRoleUpdateResult(
                 object.value("success").toBool(),
+                object.value("message").toString());
+            continue;
+        }
+
+        if (type == "STOCK_LIST_RESPONSE") {
+            const bool success = object.value("success").toBool();
+            const QString message = object.value("message").toString();
+            QList<StockInfo> stocks;
+
+            if (success && object.value("stocks").isArray()) {
+                const QJsonArray array = object.value("stocks").toArray();
+
+                for (const QJsonValue &value : array) {
+                    if (!value.isObject())
+                        continue;
+
+                    const QJsonObject item = value.toObject();
+                    StockInfo stock;
+                    stock.symbol = item.value("symbol").toString();
+                    stock.name = item.value("name").toString();
+                    stock.displayOrder =
+                        item.value("display_order").toInt();
+                    stocks.append(stock);
+                }
+            }
+
+            emit stockListReceived(success, stocks, message);
+            continue;
+        }
+
+        if (type == "STOCK_HISTORY_RESPONSE") {
+            const bool success = object.value("success").toBool();
+            const QString symbol = object.value("symbol").toString();
+            const QString message = object.value("message").toString();
+            QList<HistoryPoint> points;
+
+            if (success && object.value("points").isArray()) {
+                const QJsonArray array = object.value("points").toArray();
+
+                for (const QJsonValue &value : array) {
+                    if (!value.isObject())
+                        continue;
+
+                    const QJsonObject item = value.toObject();
+                    HistoryPoint point;
+                    point.timestamp = item.value("timestamp").toString();
+                    point.price = item.value("price").toDouble();
+
+                    if (!point.timestamp.isEmpty() && point.price > 0)
+                        points.append(point);
+                }
+            }
+
+            emit stockHistoryReceived(success, symbol, points, message);
+            continue;
+        }
+
+        if (type == "ADMIN_STOCK_RESPONSE") {
+            emit adminStockResult(
+                object.value("success").toBool(),
+                object.value("message").toString());
+            continue;
+        }
+        if (type == "FAVORITES_RESPONSE") {
+            const bool success = object.value("success").toBool();
+            const QString message = object.value("message").toString();
+            QList<FavoriteInfo> favorites;
+
+            if (success && object.value("favorites").isArray()) {
+                const QJsonArray array =
+                    object.value("favorites").toArray();
+
+                for (const QJsonValue &value : array) {
+                    if (!value.isObject())
+                        continue;
+
+                    const QJsonObject item = value.toObject();
+
+                    FavoriteInfo favorite;
+                    favorite.symbol = item.value("symbol").toString();
+                    favorite.name = item.value("name").toString();
+                    favorite.displayOrder =
+                        item.value("display_order").toInt();
+                    favorite.createdAt =
+                        item.value("created_at").toString();
+
+                    favorites.append(favorite);
+                }
+            }
+
+            emit favoritesReceived(success, favorites, message);
+            continue;
+        }
+
+        if (type == "FAVORITE_ADD_RESPONSE"
+            || type == "FAVORITE_REMOVE_RESPONSE") {
+            emit favoriteActionResult(
+                object.value("success").toBool(),
+                type,
                 object.value("message").toString());
             continue;
         }

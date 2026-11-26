@@ -82,3 +82,8 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 /.qtcreator/
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
