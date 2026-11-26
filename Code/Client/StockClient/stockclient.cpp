@@ -1,4 +1,4 @@
-#include "stockclient.h"
+﻿#include "stockclient.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -13,8 +13,8 @@ static const int kReconnectIntervalMs = 3000;
 
 StockClient::StockClient(QObject *parent)
     : QObject(parent),
-    socket(new QTcpSocket(this)),
-    reconnectTimer(new QTimer(this))
+      socket(new QTcpSocket(this)),
+      reconnectTimer(new QTimer(this))
 {
     reconnectTimer->setSingleShot(true);
     reconnectTimer->setInterval(kReconnectIntervalMs);
@@ -47,7 +47,6 @@ StockClient::StockClient(QObject *parent)
             this, [this](QAbstractSocket::SocketError) {
                 emit statusChanged(
                     "Loi TCP: " + socket->errorString());
-                // Ket noi that bai (vd Server chua bat) cung thu lai.
                 scheduleReconnect();
             });
 }
@@ -81,14 +80,11 @@ void StockClient::disconnectFromServer()
         return;
     }
 
-    // Dang ket noi do hoac dang cho thu lai: khong co ket noi that
-    // nen khong co tin hieu disconnected, tu bao trang thai.
     socket->abort();
     emit statusChanged("Da ngat ket noi.");
 }
 
 // Hen gio thu ket noi lai neu nguoi dung chua bam Ngat ket noi.
-// Goi nhieu lan van chi co mot lan hen gio.
 void StockClient::scheduleReconnect()
 {
     if (!autoReconnect) {
@@ -103,6 +99,131 @@ void StockClient::scheduleReconnect()
     if (!reconnectTimer->isActive()) {
         reconnectTimer->start();
     }
+}
+
+void StockClient::registerAccount(const QString &username,
+                                  const QString &password)
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit registrationResult(
+            false, "Vui long ket noi Server truoc khi dang ky.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "REGISTER";
+    request["username"] = username;
+    request["password"] = password;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+
+    message.append('\n');
+
+    if (socket->write(message) < 0) {
+        emit registrationResult(
+            false, "Khong gui duoc yeu cau dang ky: "
+                + socket->errorString());
+    }
+}
+
+void StockClient::login(const QString &username,
+                        const QString &password)
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit loginResult(
+            false,
+            "Vui long ket noi Server truoc khi dang nhap.",
+            "");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "LOGIN";
+    request["username"] = username;
+    request["password"] = password;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+
+    message.append('\n');
+
+    if (socket->write(message) < 0) {
+        emit loginResult(
+            false,
+            "Khong gui duoc yeu cau dang nhap: "
+                + socket->errorString(),
+            "");
+    }
+}
+
+// Chuyen mot doi tuong JSON thanh StockQuote.
+// timestamp mac dinh duoc lay tu SNAPSHOT neu quote khong co timestamp rieng.
+bool StockClient::parseQuote(const QJsonObject &object,
+                             const QString &defaultTimestamp,
+                             StockQuote &quote)
+{
+    QString symbol = object.value("symbol").toString().trimmed();
+    QJsonValue priceValue = object.value("price");
+
+    if (symbol.isEmpty() || !priceValue.isDouble()) {
+        return false;
+    }
+
+    double price = priceValue.toDouble();
+
+    if (price <= 0.0) {
+        return false;
+    }
+
+    QString timestamp = object.value("timestamp").toString();
+
+    if (timestamp.isEmpty()) {
+        timestamp = defaultTimestamp;
+    }
+
+    quote.symbol = symbol;
+    quote.price = price;
+    quote.timestamp = timestamp;
+
+    return true;
+}
+
+// Xu ly SNAPSHOT duoc Server gui ngay sau khi Client ket noi.
+void StockClient::handleSnapshot(const QJsonObject &object)
+{
+    QJsonValue pricesValue = object.value("prices");
+
+    if (!pricesValue.isArray()) {
+        qWarning() << "SNAPSHOT khong co mang prices hop le.";
+        return;
+    }
+
+    // Server gui timestamp chung o cap SNAPSHOT.
+    QString snapshotTimestamp =
+        object.value("timestamp").toString();
+
+    QJsonArray pricesArray = pricesValue.toArray();
+    QList<StockQuote> quotes;
+
+    for (const QJsonValue &value : pricesArray) {
+        if (!value.isObject()) {
+            continue;
+        }
+
+        StockQuote quote;
+
+        if (parseQuote(value.toObject(),
+                       snapshotTimestamp,
+                       quote)) {
+            quotes.append(quote);
+        } else {
+            qWarning() << "Bo qua du lieu co phieu khong hop le trong SNAPSHOT:"
+                       << value;
+        }
+    }
+
+    emit snapshotReceived(quotes);
 }
 
 void StockClient::readData()
@@ -137,91 +258,46 @@ void StockClient::readData()
         }
 
         QJsonObject object = document.object();
-        const QString type = object.value("type").toString();
+        QString type = object.value("type").toString();
+
+        if (type == "REGISTER_RESPONSE") {
+            bool success = object.value("success").toBool();
+            QString message = object.value("message").toString();
+
+            emit registrationResult(success, message);
+            continue;
+        }
+
+        if (type == "LOGIN_RESPONSE") {
+            bool success = object.value("success").toBool();
+            QString message = object.value("message").toString();
+            QString role = object.value("role").toString();
+
+            emit loginResult(success, message, role);
+            continue;
+        }
 
         if (type == "SNAPSHOT") {
             handleSnapshot(object);
             continue;
         }
 
-        if (type != "PRICE_UPDATE") {
+        if (type == "PRICE_UPDATE") {
+            StockQuote quote;
+
+            if (!parseQuote(object, QString(), quote)) {
+                qWarning() << "Du lieu PRICE_UPDATE khong hop le:"
+                           << line;
+                continue;
+            }
+
+            emit priceReceived(
+                quote.symbol,
+                quote.price,
+                quote.timestamp);
             continue;
         }
 
-        StockQuote quote;
-
-        if (!parseQuote(object, QString(), quote)) {
-            qWarning() << "Du lieu gia co phieu khong hop le:"
-                       << line;
-            continue;
-        }
-
-        emit priceReceived(quote.symbol, quote.price,
-                           quote.timestamp);
+        qWarning() << "Loai thong diep khong duoc ho tro:" << type;
     }
-}
-
-// Doc mot ban ghi gia (dung chung cho PRICE_UPDATE va tung phan
-// tu cua SNAPSHOT). Tra ve false neu thieu ma, gia sai kieu hoac <= 0.
-bool StockClient::parseQuote(const QJsonObject &object,
-                             const QString &defaultTimestamp,
-                             StockQuote &quote)
-{
-    const QString symbol = object.value("symbol").toString();
-    const QJsonValue priceValue = object.value("price");
-
-    if (symbol.isEmpty() || !priceValue.isDouble()) {
-        return false;
-    }
-
-    const double price = priceValue.toDouble();
-
-    if (price <= 0.0) {
-        return false;
-    }
-
-    QString timestamp = object.value("timestamp").toString();
-
-    if (timestamp.isEmpty()) {
-        timestamp = defaultTimestamp;
-    }
-
-    quote.symbol = symbol;
-    quote.price = price;
-    quote.timestamp = timestamp;
-    return true;
-}
-
-void StockClient::handleSnapshot(const QJsonObject &object)
-{
-    const QJsonValue pricesValue = object.value("prices");
-
-    if (!pricesValue.isArray()) {
-        qWarning() << "SNAPSHOT thieu mang \"prices\".";
-        return;
-    }
-
-    // Moi ban ghi co the khong co timestamp rieng: dung timestamp
-    // chung cua SNAPSHOT.
-    const QString snapshotTimestamp =
-        object.value("timestamp").toString();
-
-    QList<StockQuote> quotes;
-
-    const QJsonArray array = pricesValue.toArray();
-
-    for (const QJsonValue &value : array) {
-        StockQuote quote;
-
-        if (!value.isObject()
-            || !parseQuote(value.toObject(),
-                           snapshotTimestamp, quote)) {
-            qWarning() << "Phan tu SNAPSHOT khong hop le, bo qua.";
-            continue;
-        }
-
-        quotes.append(quote);
-    }
-
-    emit snapshotReceived(quotes);
 }
