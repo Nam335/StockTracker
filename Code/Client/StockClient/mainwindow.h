@@ -47,6 +47,8 @@ private:
                      double price,
                      const QString &timestamp);
 
+    int findOrAddRow(const QString &symbol);
+
     void applySnapshot(const QList<StockQuote> &quotes);
 
     void applyAdminAccounts(bool success,

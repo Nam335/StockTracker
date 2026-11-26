@@ -373,43 +373,64 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow() = default;
 
 
+// Tim hang cua mot ma co phieu. Neu bang chua co ma nay thi them
+// mot hang moi o cuoi bang (cac o gia, thay doi, thoi gian la "--")
+// va tra ve chi so hang moi. Nho vay Server doi so luong ma luc demo
+// thi Client van hien du.
+int MainWindow::findOrAddRow(const QString &symbol)
+{
+    for (int row = 0; row < priceTable->rowCount(); ++row) {
+        if (priceTable->item(row, 0)->text() == symbol) {
+            return row;
+        }
+    }
+
+    const int newRow = priceTable->rowCount();
+    priceTable->insertRow(newRow);
+
+    priceTable->setItem(
+        newRow, 0, new QTableWidgetItem(symbol));
+
+    for (int col = 1; col < priceTable->columnCount(); ++col) {
+        priceTable->setItem(
+            newRow, col, new QTableWidgetItem("--"));
+    }
+
+    return newRow;
+}
+
+
 // Nap bang gia ban dau theo SNAPSHOT.
 void MainWindow::applySnapshot(const QList<StockQuote> &quotes)
 {
     for (const StockQuote &quote : quotes) {
-        for (int row = 0; row < priceTable->rowCount(); ++row) {
-            if (priceTable->item(row, 0)->text() != quote.symbol) {
-                continue;
-            }
+        const int row = findOrAddRow(quote.symbol);
 
-            QTableWidgetItem *priceItem =
-                priceTable->item(row, 1);
-            QTableWidgetItem *changeItem =
-                priceTable->item(row, 2);
-            QTableWidgetItem *timeItem =
-                priceTable->item(row, 3);
+        QTableWidgetItem *priceItem =
+            priceTable->item(row, 1);
+        QTableWidgetItem *changeItem =
+            priceTable->item(row, 2);
+        QTableWidgetItem *timeItem =
+            priceTable->item(row, 3);
 
-            priceItem->setText(
-                QString::number(quote.price, 'f', 2));
-            priceItem->setData(Qt::UserRole, quote.price);
+        priceItem->setText(
+            QString::number(quote.price, 'f', 2));
+        priceItem->setData(Qt::UserRole, quote.price);
 
-            changeItem->setText("--");
+        changeItem->setText("--");
 
-            priceItem->setForeground(QBrush());
-            changeItem->setForeground(QBrush());
+        priceItem->setForeground(QBrush());
+        changeItem->setForeground(QBrush());
 
-            const QDateTime dateTime =
-                QDateTime::fromString(
-                    quote.timestamp, Qt::ISODate);
+        const QDateTime dateTime =
+            QDateTime::fromString(
+                quote.timestamp, Qt::ISODate);
 
-            if (dateTime.isValid()) {
-                timeItem->setText(
-                    dateTime.toLocalTime().toString("HH:mm:ss"));
-            } else {
-                timeItem->setText("--");
-            }
-
-            break;
+        if (dateTime.isValid()) {
+            timeItem->setText(
+                dateTime.toLocalTime().toString("HH:mm:ss"));
+        } else {
+            timeItem->setText("--");
         }
     }
 }
@@ -421,73 +442,67 @@ void MainWindow::updatePrice(
     double price,
     const QString &timestamp)
 {
-    for (int row = 0; row < priceTable->rowCount(); ++row) {
-        if (priceTable->item(row, 0)->text() != symbol) {
-            continue;
-        }
+    const int row = findOrAddRow(symbol);
 
-        QTableWidgetItem *priceItem =
-            priceTable->item(row, 1);
-        QTableWidgetItem *changeItem =
-            priceTable->item(row, 2);
-        QTableWidgetItem *timeItem =
-            priceTable->item(row, 3);
+    QTableWidgetItem *priceItem =
+        priceTable->item(row, 1);
+    QTableWidgetItem *changeItem =
+        priceTable->item(row, 2);
+    QTableWidgetItem *timeItem =
+        priceTable->item(row, 3);
 
-        const QVariant oldValue =
-            priceItem->data(Qt::UserRole);
+    const QVariant oldValue =
+        priceItem->data(Qt::UserRole);
 
-        priceItem->setText(
-            QString::number(price, 'f', 2));
-        priceItem->setData(Qt::UserRole, price);
+    priceItem->setText(
+        QString::number(price, 'f', 2));
+    priceItem->setData(Qt::UserRole, price);
 
-        const QDateTime dateTime =
-            QDateTime::fromString(timestamp, Qt::ISODate);
+    const QDateTime dateTime =
+        QDateTime::fromString(timestamp, Qt::ISODate);
 
-        if (dateTime.isValid()) {
-            timeItem->setText(
-                dateTime.toLocalTime().toString("HH:mm:ss"));
-        } else {
-            timeItem->setText("--");
-        }
+    if (dateTime.isValid()) {
+        timeItem->setText(
+            dateTime.toLocalTime().toString("HH:mm:ss"));
+    } else {
+        timeItem->setText("--");
+    }
 
-        if (!oldValue.isValid()) {
-            changeItem->setText("--");
-            return;
-        }
-
-        const double oldPrice = oldValue.toDouble();
-
-        if (oldPrice <= 0.0) {
-            changeItem->setText("--");
-            return;
-        }
-
-        const double change = price - oldPrice;
-        const double percent = change / oldPrice * 100.0;
-
-        if (qAbs(change) < 0.005) {
-            changeItem->setText("0.00 (0.00%)");
-            changeItem->setForeground(QBrush());
-            priceItem->setForeground(QBrush());
-            return;
-        }
-
-        const QString sign = change > 0 ? "+" : "";
-
-        changeItem->setText(
-            sign + QString::number(change, 'f', 2)
-            + " (" + sign
-            + QString::number(percent, 'f', 2) + "%)");
-
-        const QColor color = change > 0
-                                 ? QColor(0x1B, 0x8A, 0x3A)
-                                 : QColor(0xD3, 0x2F, 0x2F);
-
-        changeItem->setForeground(color);
-        priceItem->setForeground(color);
-
+    if (!oldValue.isValid()) {
+        changeItem->setText("--");
         return;
     }
+
+    const double oldPrice = oldValue.toDouble();
+
+    if (oldPrice <= 0.0) {
+        changeItem->setText("--");
+        return;
+    }
+
+    const double change = price - oldPrice;
+    const double percent = change / oldPrice * 100.0;
+
+    if (qAbs(change) < 0.005) {
+        changeItem->setText("0.00 (0.00%)");
+        changeItem->setForeground(QBrush());
+        priceItem->setForeground(QBrush());
+        return;
+    }
+
+    const QString sign = change > 0 ? "+" : "";
+
+    changeItem->setText(
+        sign + QString::number(change, 'f', 2)
+        + " (" + sign
+        + QString::number(percent, 'f', 2) + "%)");
+
+    const QColor color = change > 0
+                             ? QColor(0x1B, 0x8A, 0x3A)
+                             : QColor(0xD3, 0x2F, 0x2F);
+
+    changeItem->setForeground(color);
+    priceItem->setForeground(color);
 }
 
 void MainWindow::applyAdminAccounts(
