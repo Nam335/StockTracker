@@ -1,4 +1,4 @@
-﻿#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -9,6 +9,7 @@ class QPushButton;
 class QTableWidget;
 class QLineEdit;
 class QSpinBox;
+class QGroupBox;
 
 class MainWindow : public QMainWindow
 {
@@ -37,11 +38,20 @@ private:
     QLabel *registrationLabel;
     QPushButton *loginButton;
 
+    QGroupBox *adminGroup;
+    QTableWidget *accountTable;
+    QPushButton *refreshAccountsButton;
+    QPushButton *changeRoleButton;
+
     void updatePrice(const QString &symbol,
                      double price,
                      const QString &timestamp);
 
     void applySnapshot(const QList<StockQuote> &quotes);
+
+    void applyAdminAccounts(bool success,
+                            const QList<AccountInfo> &accounts,
+                            const QString &message);
 };
 
 #endif // MAINWINDOW_H

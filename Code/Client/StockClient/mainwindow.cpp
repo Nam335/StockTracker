@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 
 #include <QLabel>
 #include <QPushButton>
@@ -17,6 +17,8 @@
 #include <QRegularExpression>
 #include <QBrush>
 #include <QSpinBox>
+#include <QGroupBox>
+#include <QMessageBox>
 #include <QtMath>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -31,7 +33,11 @@ MainWindow::MainWindow(QWidget *parent)
       passwordInput(new QLineEdit),
       registerButton(new QPushButton("Dang ky")),
       registrationLabel(new QLabel("")),
-      loginButton(new QPushButton("Dang nhap"))
+      loginButton(new QPushButton("Dang nhap")),
+      adminGroup(new QGroupBox("Quan tri tai khoan")),
+      accountTable(new QTableWidget(0, 4)),
+      refreshAccountsButton(new QPushButton("Lam moi danh sach")),
+      changeRoleButton(new QPushButton("Doi quyen"))
 {
     setWindowTitle("Stock Tracker - Client");
     resize(850, 500);
@@ -79,6 +85,33 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Bang gia co phieu.
     mainLayout->addWidget(priceTable);
+
+    QVBoxLayout *adminLayout = new QVBoxLayout(adminGroup);
+
+    accountTable->setHorizontalHeaderLabels(
+        {"ID", "Ten dang nhap", "Vai tro", "Ngay tao"});
+
+    accountTable->setEditTriggers(
+        QAbstractItemView::NoEditTriggers);
+
+    accountTable->setSelectionBehavior(
+        QAbstractItemView::SelectRows);
+
+    accountTable->setSelectionMode(
+        QAbstractItemView::SingleSelection);
+
+    accountTable->horizontalHeader()->setSectionResizeMode(
+        QHeaderView::Stretch);
+
+    QHBoxLayout *adminButtonLayout = new QHBoxLayout;
+    adminButtonLayout->addWidget(refreshAccountsButton);
+    adminButtonLayout->addWidget(changeRoleButton);
+
+    adminLayout->addWidget(accountTable);
+    adminLayout->addLayout(adminButtonLayout);
+
+    adminGroup->hide();
+    mainLayout->addWidget(adminGroup);
 
     priceTable->setHorizontalHeaderLabels(
         {"Ma co phieu", "Gia", "Thay doi", "Thoi gian"});
@@ -150,6 +183,11 @@ MainWindow::MainWindow(QWidget *parent)
 
                 registerButton->setEnabled(connected);
                 loginButton->setEnabled(connected);
+
+                if (!connected) {
+                    adminGroup->hide();
+                    accountTable->setRowCount(0);
+                }
             });
 
     // Xu ly nut Dang ky.
@@ -242,8 +280,84 @@ MainWindow::MainWindow(QWidget *parent)
                     registrationLabel->setText(
                         message + " - Quyen: " + role);
                     passwordInput->clear();
+
+                    if (role == "admin") {
+                        adminGroup->show();
+                        client.requestAdminAccounts();
+                    } else {
+                        adminGroup->hide();
+                        accountTable->setRowCount(0);
+                    }
                 } else {
                     registrationLabel->setText(message);
+                    adminGroup->hide();
+                    accountTable->setRowCount(0);
+                }
+            });
+
+    // Nhan ket qua danh sach tai khoan tu Server.
+    connect(&client, &StockClient::adminAccountsResult,
+            this, [this](bool success,
+                         const QList<AccountInfo> &accounts,
+                         const QString &message) {
+                applyAdminAccounts(success, accounts, message);
+            });
+
+    // Nhan ket qua thay doi quyen tai khoan.
+    connect(&client, &StockClient::adminRoleUpdateResult,
+            this, [this](bool success, const QString &message) {
+                if (success) {
+                    QMessageBox::information(
+                        this, "Quan tri tai khoan", message);
+                    client.requestAdminAccounts();
+                } else {
+                    QMessageBox::warning(
+                        this, "Quan tri tai khoan", message);
+                }
+            });
+
+    // Lam moi danh sach tai khoan.
+    connect(refreshAccountsButton, &QPushButton::clicked,
+            this, [this]() {
+                client.requestAdminAccounts();
+            });
+
+    // Doi quyen tai khoan duoc chon.
+    connect(changeRoleButton, &QPushButton::clicked,
+            this, [this]() {
+                int row = accountTable->currentRow();
+
+                if (row < 0) {
+                    QMessageBox::warning(
+                        this, "Quan tri tai khoan",
+                        "Hay chon mot tai khoan trong danh sach.");
+                    return;
+                }
+
+                QTableWidgetItem *idItem = accountTable->item(row, 0);
+                QTableWidgetItem *usernameItem = accountTable->item(row, 1);
+                QTableWidgetItem *roleItem = accountTable->item(row, 2);
+
+                if (!idItem || !usernameItem || !roleItem)
+                    return;
+
+                int userId = idItem->data(Qt::UserRole).toInt();
+                QString username = usernameItem->text();
+                QString currentRole = roleItem->text();
+
+                QString newRole =
+                    (currentRole == "admin") ? "user" : "admin";
+
+                QString question =
+                    "Ban co chac muon doi quyen tai khoan "
+                    + username + " tu " + currentRole
+                    + " thanh " + newRole + "?";
+
+                if (QMessageBox::question(
+                        this, "Xac nhan doi quyen", question,
+                        QMessageBox::Yes | QMessageBox::No,
+                        QMessageBox::No) == QMessageBox::Yes) {
+                    client.setAccountRole(userId, newRole);
                 }
             });
 
@@ -373,5 +487,40 @@ void MainWindow::updatePrice(
         priceItem->setForeground(color);
 
         return;
+    }
+}
+
+void MainWindow::applyAdminAccounts(
+    bool success,
+    const QList<AccountInfo> &accounts,
+    const QString &message)
+{
+    if (!success) {
+        QMessageBox::warning(
+            this, "Quan tri tai khoan",
+            message.isEmpty()
+                ? "Khong lay duoc danh sach tai khoan."
+                : message);
+        return;
+    }
+
+    accountTable->setRowCount(0);
+
+    for (const AccountInfo &account : accounts) {
+        int row = accountTable->rowCount();
+        accountTable->insertRow(row);
+
+        QTableWidgetItem *idItem =
+            new QTableWidgetItem(QString::number(account.id));
+
+        idItem->setData(Qt::UserRole, account.id);
+
+        accountTable->setItem(row, 0, idItem);
+        accountTable->setItem(
+            row, 1, new QTableWidgetItem(account.username));
+        accountTable->setItem(
+            row, 2, new QTableWidgetItem(account.role));
+        accountTable->setItem(
+            row, 3, new QTableWidgetItem(account.createdAt));
     }
 }

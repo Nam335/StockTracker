@@ -1,4 +1,4 @@
-﻿#include "stockclient.h"
+#include "stockclient.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -157,6 +157,52 @@ void StockClient::login(const QString &username,
     }
 }
 
+void StockClient::requestAdminAccounts()
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit adminAccountsResult(false, {},
+                                 "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "ADMIN_LIST_REQUEST";
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->write(message) < 0) {
+        emit adminAccountsResult(
+            false, {},
+            "Khong gui duoc yeu cau: " + socket->errorString());
+    }
+}
+
+void StockClient::setAccountRole(int userId, const QString &role)
+{
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        emit adminRoleUpdateResult(false,
+                                   "Chua ket noi Server.");
+        return;
+    }
+
+    QJsonObject request;
+    request["type"] = "ADMIN_ROLE_REQUEST";
+    request["user_id"] = userId;
+    request["role"] = role;
+
+    QByteArray message =
+        QJsonDocument(request).toJson(QJsonDocument::Compact);
+    message.append('\n');
+
+    if (socket->write(message) < 0) {
+        emit adminRoleUpdateResult(
+            false,
+            "Khong gui duoc yeu cau: " + socket->errorString());
+    }
+}
+
 // Chuyen mot doi tuong JSON thanh StockQuote.
 // timestamp mac dinh duoc lay tu SNAPSHOT neu quote khong co timestamp rieng.
 bool StockClient::parseQuote(const QJsonObject &object,
@@ -274,6 +320,44 @@ void StockClient::readData()
             QString role = object.value("role").toString();
 
             emit loginResult(success, message, role);
+            continue;
+        }
+
+        if (type == "ADMIN_LIST_RESPONSE") {
+            bool success = object.value("success").toBool();
+            QString message = object.value("message").toString();
+            QList<AccountInfo> accounts;
+
+            if (success && object.value("accounts").isArray()) {
+                QJsonArray array = object.value("accounts").toArray();
+
+                for (const QJsonValue &value : array) {
+                    if (!value.isObject())
+                        continue;
+
+                    QJsonObject accountObject = value.toObject();
+
+                    AccountInfo account;
+                    account.id = accountObject.value("id").toInt();
+                    account.username =
+                        accountObject.value("username").toString();
+                    account.role =
+                        accountObject.value("role").toString();
+                    account.createdAt =
+                        accountObject.value("created_at").toString();
+
+                    accounts.append(account);
+                }
+            }
+
+            emit adminAccountsResult(success, accounts, message);
+            continue;
+        }
+
+        if (type == "ADMIN_ROLE_RESPONSE") {
+            emit adminRoleUpdateResult(
+                object.value("success").toBool(),
+                object.value("message").toString());
             continue;
         }
 

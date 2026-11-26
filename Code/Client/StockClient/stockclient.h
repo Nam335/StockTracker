@@ -1,4 +1,4 @@
-﻿#ifndef STOCKCLIENT_H
+#ifndef STOCKCLIENT_H
 #define STOCKCLIENT_H
 
 #include <QObject>
@@ -14,6 +14,14 @@ struct StockQuote
     QString symbol;
     double price = 0.0;
     QString timestamp;
+};
+
+struct AccountInfo
+{
+    int id = 0;
+    QString username;
+    QString role;
+    QString createdAt;
 };
 
 class StockClient : public QObject
@@ -32,6 +40,9 @@ public:
     void login(const QString &username,
                const QString &password);
 
+    void requestAdminAccounts();
+    void setAccountRole(int userId, const QString &role);
+
     bool isActive() const { return autoReconnect; }
 
 signals:
@@ -49,6 +60,13 @@ signals:
                      const QString &role);
 
     void snapshotReceived(const QList<StockQuote> &quotes);
+
+    void adminAccountsResult(bool success,
+                             const QList<AccountInfo> &accounts,
+                             const QString &message);
+
+    void adminRoleUpdateResult(bool success,
+                               const QString &message);
 
 private slots:
     void readData();
